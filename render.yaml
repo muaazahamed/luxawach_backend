@@ -1,0 +1,8 @@
+﻿services:
+  - type: web
+    name: luxa-wach-backend
+    env: node
+    rootDir: server
+    buildCommand: npm install
+    startCommand: npm start
+    healthCheckPath: /health
