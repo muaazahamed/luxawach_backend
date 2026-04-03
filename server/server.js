@@ -128,6 +128,10 @@ app.get('/health', (_req, res) => {
   });
 });
 
+app.get("/ping", (req, res) => {
+  res.status(200).send("Server alive ✅");
+});
+
 app.use('/api', apiLimiter);
 app.use('/api/auth', require('./routes/authRoutes'));
 app.use('/api/products', require('./routes/productRoutes'));
