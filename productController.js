@@ -6,6 +6,7 @@ const otpGenerator = require('otp-generator');
 
 const normalizeEmail = (email) => String(email || '').trim().toLowerCase();
 const getAdminEmail = () => normalizeEmail(process.env.ADMIN_EMAIL);
+const getAdminPassword = () => String(process.env.ADMIN_PASSWORD || '');
 const OTP_SECRET = String(process.env.OTP_SECRET || '');
 const OTP_TTL_MINUTES = Number(process.env.OTP_TTL_MINUTES || 10);
 const OTP_MAX_ATTEMPTS = Number(process.env.OTP_MAX_ATTEMPTS || 5);
@@ -117,6 +118,7 @@ const authUser = async (req, res, next) => {
     const email = normalizeEmail(req.body?.email);
     const password = String(req.body?.password || '');
     const ADMIN_EMAIL = getAdminEmail();
+    const ADMIN_PASSWORD = getAdminPassword();
 
     if (!email || !password) {
       res.status(400);
@@ -124,26 +126,46 @@ const authUser = async (req, res, next) => {
     }
 
     await ensureAdminAccount();
+    const isConfiguredAdminEmail = email === ADMIN_EMAIL;
     const user = await User.findOne({ email });
 
-    if (!user || !(await user.matchPassword(password))) {
+    if (!user) {
       res.status(401);
       throw new Error('Invalid email or password');
     }
 
-    // Security: only predefined admin email may keep admin role.
-    if (normalizeEmail(user.email) !== ADMIN_EMAIL && user.role !== 'user') {
-      user.role = 'user';
-      await user.save();
-    }
+    if (isConfiguredAdminEmail) {
+      if (!ADMIN_PASSWORD) {
+        res.status(500);
+        throw new Error('ADMIN_PASSWORD is not configured');
+      }
 
-    // Admin access is bound to the configured admin email.
-    // Password validation is already handled by bcrypt above.
-    if (user.role === 'admin') {
-      const isConfiguredAdmin = normalizeEmail(user.email) === ADMIN_EMAIL;
-      if (!isConfiguredAdmin) {
+      if (password !== ADMIN_PASSWORD) {
         res.status(401);
-        throw new Error('Invalid admin credentials');
+        throw new Error('Invalid email or password');
+      }
+
+      const matchesStoredHash = await user.matchPassword(password);
+      if (!matchesStoredHash) {
+        // Keep configured admin login stable even if DB hash drifts from env.
+        user.password = password;
+      }
+
+      if (user.role !== 'admin') {
+        user.role = 'admin';
+      }
+
+      await user.save();
+    } else {
+      if (!(await user.matchPassword(password))) {
+        res.status(401);
+        throw new Error('Invalid email or password');
+      }
+
+      // Security: only configured admin email may keep admin role.
+      if (user.role !== 'user') {
+        user.role = 'user';
+        await user.save();
       }
     }
 
